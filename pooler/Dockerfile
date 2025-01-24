@@ -1,4 +1,4 @@
-FROM supabase/supavisor:1.1.56
+FROM supabase/supavisor:2.1.2
 
 ADD ./pooler.exs /etc/pooler/pooler.exs
 
