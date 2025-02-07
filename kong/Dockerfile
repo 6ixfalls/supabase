@@ -1,4 +1,4 @@
-FROM kong:2.8.1
+FROM kong:3.9.0
 COPY ./kong.yml /home/kong/temp.yml
 USER 0
 RUN apk update && apk add gettext
