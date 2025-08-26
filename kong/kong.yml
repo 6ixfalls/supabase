@@ -233,7 +233,7 @@ services:
       - name: dashboard-all
         strip_path: true
         paths:
-          - /
+          - /studio
     plugins:
       - name: cors
       - name: basic-auth
