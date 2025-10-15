@@ -172,17 +172,6 @@ services:
           allow:
             - admin
             - anon
-  ## Storage routes: the storage server manages its own auth
-  - name: storage-v1
-    _comment: 'Storage: /storage/v1/* -> http://storage:5000/*'
-    url: http://$STORAGE_HOST:5000/
-    routes:
-      - name: storage-v1-all
-        strip_path: true
-        paths:
-          - /storage/v1/
-    plugins:
-      - name: cors
 
   # ## Edge Functions routes
   # - name: functions-v1
@@ -196,7 +185,7 @@ services:
   #   plugins:
   #     - name: cors
 
-  # ## Analytics routes - DEVRE DIŞI BIRAKILDI
+  # ## Analytics routes - DEVRE DIŞI
   # - name: analytics-v1
   #   _comment: 'Analytics: /analytics/v1/* -> http://analytics:4000/*'
   #   url: http://$ANALYTICS_HOST:4000/
