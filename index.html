@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Supabase Credential Generator</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                --bg: #0f172a;
+                --card: #111827;
+                --text: #e5e7eb;
+                --muted: #9ca3af;
+                --border: #374151;
+                --accent: #3ecf8e;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                line-height: 1.5;
+            }
+            main {
+                width: min(1100px, calc(100% - 32px));
+                margin: 32px auto;
+            }
+            h1 {
+                margin: 0 0 8px;
+                font-size: clamp(1.8rem, 4vw, 3rem);
+            }
+            h2 {
+                margin-top: 32px;
+            }
+            p,
+            li {
+                color: var(--muted);
+            }
+            a {
+                color: var(--accent);
+            }
+            .card {
+                background: color-mix(in srgb, var(--card) 92%, white 8%);
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                padding: 20px;
+                margin: 16px 0;
+            }
+            .warning {
+                border-color: #f59e0b;
+                background: color-mix(in srgb, #451a03 35%, var(--card));
+            }
+            .actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin: 18px 0;
+            }
+            button {
+                border: 0;
+                border-radius: 10px;
+                padding: 10px 14px;
+                font-weight: 700;
+                cursor: pointer;
+                background: var(--accent);
+                color: #052e1b;
+            }
+            button.secondary {
+                background: #1f2937;
+                color: var(--text);
+                border: 1px solid var(--border);
+            }
+            label {
+                display: block;
+                font-weight: 700;
+                margin-bottom: 6px;
+            }
+            input {
+                width: 100%;
+                border: 1px solid var(--border);
+                background: #020617;
+                color: var(--text);
+                border-radius: 10px;
+                padding: 10px 12px;
+                font: inherit;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+                gap: 14px;
+            }
+            textarea,
+            pre {
+                width: 100%;
+                min-height: 320px;
+                overflow: auto;
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 14px;
+                background: #020617;
+                color: #d1fae5;
+                font:
+                    12px/1.45 ui-monospace,
+                    SFMono-Regular,
+                    Menlo,
+                    Consolas,
+                    monospace;
+                white-space: pre;
+            }
+            details {
+                margin-top: 16px;
+            }
+            summary {
+                cursor: pointer;
+                font-weight: 800;
+            }
+            .small {
+                font-size: 0.92rem;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1>Supabase Credential Generator</h1>
+            <p>
+                Generates Supabase credentials locally that aren't possible to
+                generate with random bytes in Railway natively.
+            </p>
+
+            <section class="card warning">
+                <strong>Important:</strong>
+                <p>
+                    Save the output before closing this page. Treat
+                    <code>SERVICE_ROLE_KEY</code>,
+                    <code>SUPABASE_SECRET_KEY</code>, and asymmetric
+                    service-role keys as server-only credentials. Never expose
+                    them in browser app code.
+                </p>
+            </section>
+
+            <section class="card">
+                <h2>Options</h2>
+                <div class="grid">
+                    <div>
+                        <label for="exp">JWT expiry in days</label>
+                        <input id="exp" inputmode="numeric" />
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="generate">Generate credentials</button>
+                    <button id="copy" class="secondary">Copy output</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Railway variables</h2>
+                <textarea id="output" spellcheck="false" readonly></textarea>
+            </section>
+
+            <section class="card">
+                <h2>Generation logic</h2>
+                <p>
+                    This page ports the logic from
+                    <code>docker/utils/generate-keys.sh</code> and
+                    <code>docker/utils/add-new-auth-keys.sh</code> to browser
+                    JavaScript: random bytes replace <code>openssl rand</code>,
+                    WebCrypto HMAC signs legacy HS256 JWTs, WebCrypto ECDSA
+                    signs ES256 JWTs, and SHA-256 creates opaque key checksums.
+                </p>
+                <details>
+                    <summary>Show this page's full source code</summary>
+                    <pre id="source"></pre>
+                </details>
+            </section>
+        </main>
+
+        <script>
+            const textEncoder = new TextEncoder();
+            const output = document.getElementById("output");
+            const expInput = document.getElementById("exp");
+
+            function bytes(length) {
+                const value = new Uint8Array(length);
+                crypto.getRandomValues(value);
+                return value;
+            }
+
+            function bytesToBinary(value) {
+                return Array.from(value, (byte) =>
+                    String.fromCharCode(byte),
+                ).join("");
+            }
+
+            function base64(value) {
+                return btoa(bytesToBinary(value));
+            }
+
+            function base64UrlFromBytes(value) {
+                return base64(value)
+                    .replace(/\+/g, "-")
+                    .replace(/\//g, "_")
+                    .replace(/=+$/g, "");
+            }
+
+            function base64UrlFromString(value) {
+                return base64UrlFromBytes(textEncoder.encode(value));
+            }
+
+            function hex(length) {
+                return Array.from(bytes(length), (byte) =>
+                    byte.toString(16).padStart(2, "0"),
+                ).join("");
+            }
+
+            async function sha256Base64Url(value) {
+                const digest = await crypto.subtle.digest(
+                    "SHA-256",
+                    textEncoder.encode(value),
+                );
+                return base64UrlFromBytes(new Uint8Array(digest));
+            }
+
+            async function hmacSha256Base64Url(secret, value) {
+                const key = await crypto.subtle.importKey(
+                    "raw",
+                    textEncoder.encode(secret),
+                    { name: "HMAC", hash: "SHA-256" },
+                    false,
+                    ["sign"],
+                );
+                const signature = await crypto.subtle.sign(
+                    "HMAC",
+                    key,
+                    textEncoder.encode(value),
+                );
+                return base64UrlFromBytes(new Uint8Array(signature));
+            }
+
+            async function signHs256(payload, jwtSecret) {
+                const header = { alg: "HS256", typ: "JWT" };
+                const encodedHeader = base64UrlFromString(
+                    JSON.stringify(header),
+                );
+                const encodedPayload = base64UrlFromString(
+                    JSON.stringify(payload),
+                );
+                const signedContent = `${encodedHeader}.${encodedPayload}`;
+                const signature = await hmacSha256Base64Url(
+                    jwtSecret,
+                    signedContent,
+                );
+                return `${signedContent}.${signature}`;
+            }
+
+            async function signEs256(payload, privateKey, kid) {
+                const header = { alg: "ES256", typ: "JWT", kid };
+                const encodedHeader = base64UrlFromString(
+                    JSON.stringify(header),
+                );
+                const encodedPayload = base64UrlFromString(
+                    JSON.stringify(payload),
+                );
+                const signedContent = `${encodedHeader}.${encodedPayload}`;
+                const signature = await crypto.subtle.sign(
+                    { name: "ECDSA", hash: "SHA-256" },
+                    privateKey,
+                    textEncoder.encode(signedContent),
+                );
+                return `${signedContent}.${base64UrlFromBytes(new Uint8Array(signature))}`;
+            }
+
+            async function generateOpaqueKey(prefix) {
+                const projectRef = "supabase-self-hosted";
+                const random = base64UrlFromBytes(bytes(17)).slice(0, 22);
+                const intermediate = `${prefix}${random}`;
+                const checksum = (
+                    await sha256Base64Url(`${projectRef}|${intermediate}`)
+                ).slice(0, 8);
+                return `${intermediate}_${checksum}`;
+            }
+
+            async function generate() {
+                const iat = Math.floor(Date.now() / 1000);
+                const exp = iat + Number(expInput.value) * 24 * 60 * 60;
+                if (!Number.isInteger(exp) || exp <= iat) {
+                    throw new Error(
+                        "JWT timestamps must be integers, and exp must be greater than iat.",
+                    );
+                }
+
+                const jwtSecret = base64(bytes(30));
+                const anonPayload = { role: "anon", iss: "supabase", iat, exp };
+                const servicePayload = {
+                    role: "service_role",
+                    iss: "supabase",
+                    iat,
+                    exp,
+                };
+                const anonKey = await signHs256(anonPayload, jwtSecret);
+                const serviceRoleKey = await signHs256(
+                    servicePayload,
+                    jwtSecret,
+                );
+
+                const keyPair = await crypto.subtle.generateKey(
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true,
+                    ["sign", "verify"],
+                );
+                const privateJwk = await crypto.subtle.exportKey(
+                    "jwk",
+                    keyPair.privateKey,
+                );
+                const kid = crypto.randomUUID();
+                const octKey = {
+                    kty: "oct",
+                    k: base64UrlFromBytes(textEncoder.encode(jwtSecret)),
+                    alg: "HS256",
+                };
+                const jwtKeys = [
+                    {
+                        kty: "EC",
+                        kid,
+                        use: "sig",
+                        key_ops: ["sign", "verify"],
+                        alg: "ES256",
+                        ext: true,
+                        crv: privateJwk.crv,
+                        x: privateJwk.x,
+                        y: privateJwk.y,
+                        d: privateJwk.d,
+                    },
+                    octKey,
+                ];
+                const jwtJwks = {
+                    keys: [
+                        {
+                            kty: "EC",
+                            kid,
+                            use: "sig",
+                            key_ops: ["verify"],
+                            alg: "ES256",
+                            ext: true,
+                            crv: privateJwk.crv,
+                            x: privateJwk.x,
+                            y: privateJwk.y,
+                        },
+                        octKey,
+                    ],
+                };
+                const anonKeyAsymmetric = await signEs256(
+                    anonPayload,
+                    keyPair.privateKey,
+                    kid,
+                );
+                const serviceRoleKeyAsymmetric = await signEs256(
+                    servicePayload,
+                    keyPair.privateKey,
+                    kid,
+                );
+
+                const values = {
+                    JWT_SECRET: jwtSecret,
+                    ANON_KEY: anonKey,
+                    SERVICE_ROLE_KEY: serviceRoleKey,
+                    SUPABASE_PUBLISHABLE_KEY:
+                        await generateOpaqueKey("sb_publishable_"),
+                    SUPABASE_SECRET_KEY: await generateOpaqueKey("sb_secret_"),
+                    ANON_KEY_ASYMMETRIC: anonKeyAsymmetric,
+                    SERVICE_ROLE_KEY_ASYMMETRIC: serviceRoleKeyAsymmetric,
+                    JWT_KEYS: JSON.stringify(jwtKeys),
+                    JWT_JWKS: JSON.stringify(jwtJwks),
+                };
+
+                output.value = Object.entries(values)
+                    .map(([key, value]) => `${key}=${value}`)
+                    .join("\n");
+            }
+
+            document
+                .getElementById("generate")
+                .addEventListener("click", async () => {
+                    try {
+                        output.value = "Generating...";
+                        await generate();
+                    } catch (error) {
+                        output.value = `Error: ${error.message}`;
+                    }
+                });
+
+            document
+                .getElementById("copy")
+                .addEventListener("click", async () => {
+                    if (!output.value || output.value === "Generating...")
+                        return;
+                    await navigator.clipboard.writeText(output.value);
+                });
+
+            expInput.value = "3650";
+            document.getElementById("source").textContent =
+                "<!doctype html>\n" + document.documentElement.outerHTML;
+        </script>
+    </body>
+</html>
