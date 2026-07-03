@@ -1,6 +1,5 @@
-FROM kong:2.8.1
+FROM kong:3.9.1
 COPY ./kong.yml /home/kong/temp.yml
-USER 0
-RUN apk update && apk add gettext
+COPY --chmod=777 ./kong-entrypoint.sh /home/kong/kong-entrypoint.sh
 USER kong
-ENTRYPOINT bash -c 'envsubst < ~/temp.yml > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+ENTRYPOINT ["/bin/sh", "/home/kong/kong-entrypoint.sh"]

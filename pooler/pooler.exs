@@ -8,10 +8,9 @@
 
 params = %{
   "external_id" => System.get_env("POOLER_TENANT_ID"),
-  "db_host" => "db",
+  "db_host" => System.get_env("POSTGRES_HOST") || "db",
   "db_port" => System.get_env("POSTGRES_PORT"),
   "db_database" => System.get_env("POSTGRES_DB"),
-  "ip_version" => "v6",
   "require_user" => false,
   "auth_query" => "SELECT * FROM pgbouncer.get_auth($1)",
   "default_max_clients" => System.get_env("POOLER_MAX_CLIENT_CONN"),
