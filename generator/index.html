@@ -79,6 +79,22 @@
                 color: var(--text);
                 border: 1px solid var(--border);
             }
+            button.text-button {
+                display: inline;
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                color: var(--accent);
+                font: inherit;
+                font-weight: inherit;
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
+            button.text-button:focus-visible {
+                outline: 2px solid var(--accent);
+                outline-offset: 3px;
+            }
             label {
                 display: block;
                 font-weight: 700;
@@ -272,23 +288,22 @@
                     </span>
                 </label>
                 <p>
-                    See Railway's
-                    <a
-                        href="https://docs.railway.com/integrations/oauth/creating-an-app"
-                        >OAuth</a
+                    Manage permissions in
+                    <a href="https://railway.com/account/apps"
+                        >Railway connected apps</a
+                    >. To clear this site's Railway session without revoking
+                    permissions, click
+                    <button
+                        id="disconnect"
+                        class="text-button"
+                        type="button"
+                        aria-label="Clear this site's Railway session"
                     >
-                    and
-                    <a
-                        href="https://docs.railway.com/integrations/api/manage-variables"
-                        >variable API</a
-                    >
-                    docs.
+                        here</button
+                    >.
                 </p>
                 <div class="actions">
                     <button id="connect" disabled>Connect Railway</button>
-                    <button id="disconnect" class="secondary" hidden>
-                        Disconnect
-                    </button>
                 </div>
                 <div id="railway-fields" hidden>
                     <div class="target-grid">
@@ -455,7 +470,10 @@
                             "aria-selected",
                             String(selectedTarget[`${name}Id`] === option.id),
                         );
-                        button.classList.toggle("is-active", index === activeIndex);
+                        button.classList.toggle(
+                            "is-active",
+                            index === activeIndex,
+                        );
                         button.textContent = option.name;
                         button.addEventListener("mousedown", (event) => {
                             event.preventDefault();
@@ -488,7 +506,10 @@
                     if (event.key === "Escape") return close();
                     if (event.key === "ArrowDown") {
                         event.preventDefault();
-                        activeIndex = Math.min(activeIndex + 1, matches.length - 1);
+                        activeIndex = Math.min(
+                            activeIndex + 1,
+                            matches.length - 1,
+                        );
                         render();
                     } else if (event.key === "ArrowUp") {
                         event.preventDefault();
@@ -503,8 +524,7 @@
                 input.addEventListener("blur", () =>
                     setTimeout(() => {
                         const selected = getOptions().find(
-                            ({ id }) =>
-                                id === selectedTarget[`${name}Id`],
+                            ({ id }) => id === selectedTarget[`${name}Id`],
                         );
                         input.value = selected?.name || "";
                         close();
@@ -532,7 +552,8 @@
             }
 
             function updateAddButton() {
-                addButton.disabled = !Object.values(selectedTarget).every(Boolean);
+                addButton.disabled =
+                    !Object.values(selectedTarget).every(Boolean);
             }
 
             const projectCombobox = createCombobox(
@@ -714,12 +735,14 @@
 
                 selectProject(
                     railwayProjects.find((project) =>
-                        project.services.some(({ name }) => /studio/i.test(name)),
+                        project.services.some(({ name }) =>
+                            /studio/i.test(name),
+                        ),
                     ) || railwayProjects[0],
                 );
 
-                connectButton.hidden = true;
-                disconnectButton.hidden = false;
+                connectButton.textContent = "Change Railway access";
+                connectButton.disabled = !proxyConsent.checked;
                 railwayFields.hidden = false;
                 railwayStatus.textContent = "Connected to Railway.";
             }
@@ -728,10 +751,6 @@
                 for (const key of Object.keys(sessionStorage))
                     if (key.startsWith("railway_"))
                         sessionStorage.removeItem(key);
-                connectButton.hidden = false;
-                connectButton.disabled = true;
-                disconnectButton.hidden = true;
-                railwayFields.hidden = true;
                 railwayProjects = [];
                 Object.keys(selectedTarget).forEach(
                     (key) => (selectedTarget[key] = ""),
@@ -739,9 +758,13 @@
                 projectCombobox.reset();
                 serviceCombobox.reset();
                 environmentCombobox.reset();
-                updateAddButton();
+                railwayFields.hidden = true;
                 proxyConsent.checked = false;
-                railwayStatus.textContent = "Disconnected.";
+                connectButton.textContent = "Connect Railway";
+                connectButton.disabled = true;
+                updateAddButton();
+                railwayStatus.textContent =
+                    "Railway session cleared from this site.";
             }
 
             function bytes(length) {
