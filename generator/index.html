@@ -84,7 +84,8 @@
                 font-weight: 700;
                 margin-bottom: 6px;
             }
-            input {
+            input,
+            select {
                 width: 100%;
                 border: 1px solid var(--border);
                 background: #020617;
@@ -126,6 +127,26 @@
             .small {
                 font-size: 0.92rem;
             }
+            .status {
+                margin: 12px 0 0;
+            }
+            .consent {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+                font-weight: 400;
+            }
+            .consent input {
+                width: auto;
+                margin-top: 5px;
+            }
+            [hidden] {
+                display: none !important;
+            }
+            button:disabled {
+                cursor: not-allowed;
+                opacity: 0.55;
+            }
         </style>
     </head>
     <body>
@@ -162,6 +183,63 @@
             </section>
 
             <section class="card">
+                <h2>Railway OAuth</h2>
+                <p>
+                    Connect with Railway, choose the Supabase Studio service,
+                    then generate and add all credentials to that service.
+                    Credentials are generated in this browser.
+                </p>
+                <p class="warning card small">
+                    <strong>Proxy disclaimer:</strong> Your Railway OAuth token
+                    will pass through a Cloudflare Worker because Railway's API
+                    blocks browser requests. You cannot verify that a deployed
+                    worker matches its published
+                    <a href="railway-worker.js">source code</a> or behaves
+                    legitimately. Only continue if you accept this risk.
+                </p>
+                <label class="consent">
+                    <input id="proxy-consent" type="checkbox" />
+                    <span>
+                        I understand and agree to send my Railway OAuth token
+                        through the Cloudflare Worker.
+                    </span>
+                </label>
+                <p>
+                    See Railway's
+                    <a
+                        href="https://docs.railway.com/integrations/oauth/creating-an-app"
+                        >OAuth</a
+                    >
+                    and
+                    <a
+                        href="https://docs.railway.com/integrations/api/manage-variables"
+                        >variable API</a
+                    >
+                    docs.
+                </p>
+                <div class="actions">
+                    <button id="connect" disabled>Connect Railway</button>
+                    <button id="disconnect" class="secondary" hidden>
+                        Disconnect
+                    </button>
+                </div>
+                <div id="railway-fields" hidden>
+                    <label for="service">Target service</label>
+                    <select id="service"></select>
+                    <p class="small">
+                        Select your <strong>Supabase Studio</strong> service.
+                        Project and environment appear beside each service.
+                    </p>
+                    <button id="add-to-railway">
+                        Generate and add credentials
+                    </button>
+                </div>
+                <p id="railway-status" class="status small" role="status">
+                    Not connected.
+                </p>
+            </section>
+
+            <section class="card">
                 <h2>Railway variables</h2>
                 <textarea id="output" spellcheck="false" readonly></textarea>
             </section>
@@ -175,6 +253,9 @@
                     JavaScript: random bytes replace <code>openssl rand</code>,
                     WebCrypto HMAC signs legacy HS256 JWTs, WebCrypto ECDSA
                     signs ES256 JWTs, and SHA-256 creates opaque key checksums.
+                    Railway integration uses OAuth Authorization Code with PKCE
+                    and one GraphQL bulk variable mutation. No third-party code
+                    runs on this page.
                 </p>
                 <details>
                     <summary>Show this page's full source code</summary>
@@ -187,6 +268,181 @@
             const textEncoder = new TextEncoder();
             const output = document.getElementById("output");
             const expInput = document.getElementById("exp");
+            const connectButton = document.getElementById("connect");
+            const disconnectButton = document.getElementById("disconnect");
+            const railwayFields = document.getElementById("railway-fields");
+            const railwayStatus = document.getElementById("railway-status");
+            const serviceSelect = document.getElementById("service");
+            const addButton = document.getElementById("add-to-railway");
+            const proxyConsent = document.getElementById("proxy-consent");
+            const railwayBase = "https://backboard.railway.com";
+            const railwayClientId = "rlwy_oaci_Rrr3Ou0IqOynz3BV2CVFkj6O";
+            const railwayProxyUrl =
+                "https://supabase-railway-proxy.sixfalls.workers.dev/railway/graphql";
+            let credentials;
+
+            function randomUrlSafe(length = 32) {
+                return base64UrlFromBytes(bytes(length));
+            }
+
+            function redirectUri() {
+                return location.href.split(/[?#]/)[0];
+            }
+
+            async function json(response) {
+                const body = await response.json();
+                if (!response.ok)
+                    throw new Error(
+                        body.error_description ||
+                            body.error ||
+                            response.statusText,
+                    );
+                return body;
+            }
+
+            async function railwayGraphql(query, variables = {}) {
+                if (sessionStorage.getItem("railway_proxy_consent") !== "yes")
+                    throw new Error("Cloudflare Worker consent is required.");
+                if (railwayProxyUrl.includes("YOUR_WORKER"))
+                    throw new Error("Configure railwayProxyUrl in index.html.");
+                const token = sessionStorage.getItem("railway_access_token");
+                const body = await json(
+                    await fetch(railwayProxyUrl, {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ query, variables }),
+                    }),
+                );
+                if (body.errors) throw new Error(body.errors[0].message);
+                return body.data;
+            }
+
+            async function connectRailway() {
+                if (!proxyConsent.checked)
+                    throw new Error("Cloudflare Worker consent is required.");
+                sessionStorage.setItem("railway_proxy_consent", "yes");
+                railwayStatus.textContent = "Preparing secure Railway login...";
+                const verifier = randomUrlSafe(48);
+                const challenge = base64UrlFromBytes(
+                    new Uint8Array(
+                        await crypto.subtle.digest(
+                            "SHA-256",
+                            textEncoder.encode(verifier),
+                        ),
+                    ),
+                );
+                const state = randomUrlSafe();
+                sessionStorage.setItem("railway_verifier", verifier);
+                sessionStorage.setItem("railway_state", state);
+
+                const params = new URLSearchParams({
+                    response_type: "code",
+                    client_id: railwayClientId,
+                    redirect_uri: redirectUri(),
+                    scope: "openid project:member",
+                    state,
+                    code_challenge: challenge,
+                    code_challenge_method: "S256",
+                    prompt: "consent",
+                });
+                location.assign(`${railwayBase}/oauth/auth?${params}`);
+            }
+
+            async function finishRailwayLogin(code, state) {
+                if (state !== sessionStorage.getItem("railway_state"))
+                    throw new Error("Railway OAuth state did not match.");
+                const body = new URLSearchParams({
+                    grant_type: "authorization_code",
+                    code,
+                    client_id: railwayClientId,
+                    redirect_uri: redirectUri(),
+                    code_verifier: sessionStorage.getItem("railway_verifier"),
+                });
+                const tokens = await json(
+                    await fetch(`${railwayBase}/oauth/token`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        body,
+                    }),
+                );
+                sessionStorage.setItem(
+                    "railway_access_token",
+                    tokens.access_token,
+                );
+                sessionStorage.removeItem("railway_verifier");
+                sessionStorage.removeItem("railway_state");
+                history.replaceState({}, "", redirectUri());
+            }
+
+            async function loadRailwayServices() {
+                const { externalWorkspaces } = await railwayGraphql(`
+                    query SharedProjects {
+                        externalWorkspaces { projects { id name } }
+                    }
+                `);
+                const projects = externalWorkspaces.flatMap(
+                    (workspace) => workspace.projects,
+                );
+                const details = await Promise.all(
+                    projects.map(({ id }) =>
+                        railwayGraphql(
+                            `query Project($id: String!) {
+                                project(id: $id) {
+                                    id name
+                                    services { edges { node { id name } } }
+                                    environments { edges { node { id name } } }
+                                }
+                            }`,
+                            { id },
+                        ),
+                    ),
+                );
+
+                serviceSelect.replaceChildren();
+                for (const { project } of details) {
+                    for (const environment of project.environments.edges) {
+                        for (const service of project.services.edges) {
+                            const option = document.createElement("option");
+                            option.value = JSON.stringify({
+                                projectId: project.id,
+                                environmentId: environment.node.id,
+                                serviceId: service.node.id,
+                            });
+                            option.textContent = `${project.name} / ${service.node.name} / ${environment.node.name}`;
+                            if (/studio/i.test(service.node.name))
+                                option.selected = true;
+                            serviceSelect.append(option);
+                        }
+                    }
+                }
+                if (!serviceSelect.length)
+                    throw new Error(
+                        "No services found. Reconnect and share a Railway project.",
+                    );
+
+                connectButton.hidden = true;
+                disconnectButton.hidden = false;
+                railwayFields.hidden = false;
+                railwayStatus.textContent = "Connected to Railway.";
+            }
+
+            function disconnectRailway() {
+                for (const key of Object.keys(sessionStorage))
+                    if (key.startsWith("railway_"))
+                        sessionStorage.removeItem(key);
+                connectButton.hidden = false;
+                connectButton.disabled = true;
+                disconnectButton.hidden = true;
+                railwayFields.hidden = true;
+                serviceSelect.replaceChildren();
+                proxyConsent.checked = false;
+                railwayStatus.textContent = "Disconnected.";
+            }
 
             function bytes(length) {
                 const value = new Uint8Array(length);
@@ -380,10 +636,41 @@
                     JWT_KEYS: JSON.stringify(jwtKeys),
                     JWT_JWKS: JSON.stringify(jwtJwks),
                 };
+                credentials = values;
 
                 output.value = Object.entries(values)
                     .map(([key, value]) => `${key}=${value}`)
                     .join("\n");
+                return values;
+            }
+
+            async function addCredentialsToRailway() {
+                const target = JSON.parse(serviceSelect.value);
+                addButton.disabled = true;
+                railwayStatus.textContent = "Generating credentials...";
+                try {
+                    await generate();
+                    railwayStatus.textContent =
+                        "Adding credentials to Railway...";
+                    await railwayGraphql(
+                        `mutation AddVariables($input: VariableCollectionUpsertInput!) {
+                            variableCollectionUpsert(input: $input)
+                        }`,
+                        {
+                            input: {
+                                ...target,
+                                variables: credentials,
+                            },
+                        },
+                    );
+                    const service =
+                        serviceSelect.selectedOptions[0].textContent;
+                    railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${service}. Review and deploy Railway's staged changes.`;
+                } catch (error) {
+                    railwayStatus.textContent = `Error: ${error.message}`;
+                } finally {
+                    addButton.disabled = false;
+                }
             }
 
             document
@@ -405,9 +692,51 @@
                     await navigator.clipboard.writeText(output.value);
                 });
 
+            proxyConsent.checked =
+                sessionStorage.getItem("railway_proxy_consent") === "yes";
+            connectButton.disabled = !proxyConsent.checked;
+            proxyConsent.addEventListener("change", () => {
+                connectButton.disabled = !proxyConsent.checked;
+            });
+
+            connectButton.addEventListener("click", async () => {
+                connectButton.disabled = true;
+                try {
+                    await connectRailway();
+                } catch (error) {
+                    railwayStatus.textContent = `Error: ${error.message}`;
+                    connectButton.disabled = false;
+                }
+            });
+            disconnectButton.addEventListener("click", disconnectRailway);
+            addButton.addEventListener("click", addCredentialsToRailway);
+
             expInput.value = "3650";
             document.getElementById("source").textContent =
                 "<!doctype html>\n" + document.documentElement.outerHTML;
+
+            (async function restoreRailway() {
+                const params = new URLSearchParams(location.search);
+                try {
+                    if (params.get("error"))
+                        throw new Error(
+                            params.get("error_description") ||
+                                params.get("error"),
+                        );
+                    if (params.get("code"))
+                        await finishRailwayLogin(
+                            params.get("code"),
+                            params.get("state"),
+                        );
+                    if (sessionStorage.getItem("railway_access_token"))
+                        await loadRailwayServices();
+                } catch (error) {
+                    history.replaceState({}, "", redirectUri());
+                    sessionStorage.removeItem("railway_access_token");
+                    railwayStatus.textContent = `Error: ${error.message}`;
+                    connectButton.disabled = !proxyConsent.checked;
+                }
+            })();
         </script>
     </body>
 </html>
