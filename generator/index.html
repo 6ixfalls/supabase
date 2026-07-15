@@ -94,6 +94,68 @@
                 padding: 10px 12px;
                 font: inherit;
             }
+            input[type="search"]::-webkit-search-cancel-button {
+                appearance: none;
+            }
+            .target-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 12px;
+                margin-bottom: 10px;
+            }
+            .combobox {
+                position: relative;
+            }
+            .combobox input {
+                padding-right: 36px;
+            }
+            .combobox::after {
+                content: "⌄";
+                position: absolute;
+                top: 10px;
+                right: 13px;
+                color: var(--muted);
+                pointer-events: none;
+            }
+            .combobox-list {
+                position: absolute;
+                z-index: 10;
+                top: calc(100% + 6px);
+                left: 0;
+                right: 0;
+                max-height: 240px;
+                overflow-y: auto;
+                padding: 5px;
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                background: #111827;
+                box-shadow: 0 14px 32px rgb(0 0 0 / 35%);
+            }
+            .combobox-option {
+                display: block;
+                width: 100%;
+                padding: 9px 10px;
+                border-radius: 7px;
+                background: transparent;
+                color: var(--text);
+                text-align: left;
+                font-weight: 600;
+            }
+            .combobox-option:hover,
+            .combobox-option[aria-selected="true"],
+            .combobox-option.is-active {
+                background: #1f2937;
+                color: #d1fae5;
+            }
+            .combobox-empty {
+                margin: 0;
+                padding: 9px 10px;
+                color: var(--muted);
+            }
+            .combobox input:disabled {
+                cursor: not-allowed;
+                opacity: 0.55;
+            }
             .grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -146,6 +208,11 @@
             button:disabled {
                 cursor: not-allowed;
                 opacity: 0.55;
+            }
+            @media (max-width: 720px) {
+                .target-grid {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
     </head>
@@ -224,13 +291,76 @@
                     </button>
                 </div>
                 <div id="railway-fields" hidden>
-                    <label for="service">Target service</label>
-                    <select id="service"></select>
+                    <div class="target-grid">
+                        <div>
+                            <label for="project-search">Project</label>
+                            <div class="combobox">
+                                <input
+                                    id="project-search"
+                                    type="search"
+                                    role="combobox"
+                                    placeholder="Search projects…"
+                                    autocomplete="off"
+                                    aria-autocomplete="list"
+                                    aria-expanded="false"
+                                    aria-controls="project-options"
+                                />
+                                <div
+                                    id="project-options"
+                                    class="combobox-list"
+                                    role="listbox"
+                                    hidden
+                                ></div>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="service-search">Service</label>
+                            <div class="combobox">
+                                <input
+                                    id="service-search"
+                                    type="search"
+                                    role="combobox"
+                                    placeholder="Search services…"
+                                    autocomplete="off"
+                                    aria-autocomplete="list"
+                                    aria-expanded="false"
+                                    aria-controls="service-options"
+                                />
+                                <div
+                                    id="service-options"
+                                    class="combobox-list"
+                                    role="listbox"
+                                    hidden
+                                ></div>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="environment-search">Environment</label>
+                            <div class="combobox">
+                                <input
+                                    id="environment-search"
+                                    type="search"
+                                    role="combobox"
+                                    placeholder="Search environments…"
+                                    autocomplete="off"
+                                    aria-autocomplete="list"
+                                    aria-expanded="false"
+                                    aria-controls="environment-options"
+                                />
+                                <div
+                                    id="environment-options"
+                                    class="combobox-list"
+                                    role="listbox"
+                                    hidden
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
                     <p class="small">
-                        Select your <strong>Supabase Studio</strong> service.
-                        Project and environment appear beside each service.
+                        Choose a project, its <strong>Supabase Studio</strong>
+                        service, then the target environment.
                     </p>
-                    <button id="add-to-railway">
+                    <button id="add-to-railway" disabled>
                         Generate and add credentials
                     </button>
                 </div>
@@ -272,7 +402,6 @@
             const disconnectButton = document.getElementById("disconnect");
             const railwayFields = document.getElementById("railway-fields");
             const railwayStatus = document.getElementById("railway-status");
-            const serviceSelect = document.getElementById("service");
             const addButton = document.getElementById("add-to-railway");
             const proxyConsent = document.getElementById("proxy-consent");
             const railwayBase = "https://backboard.railway.com";
@@ -280,6 +409,173 @@
             const railwayProxyUrl =
                 "https://supabase-railway-proxy.sixfalls.workers.dev/railway/graphql";
             let credentials;
+            let railwayProjects = [];
+            const selectedTarget = {
+                projectId: "",
+                serviceId: "",
+                environmentId: "",
+            };
+
+            function createCombobox(name, getOptions, onSelect) {
+                const input = document.getElementById(`${name}-search`);
+                const list = document.getElementById(`${name}-options`);
+                let activeIndex = -1;
+
+                function options() {
+                    const query = input.value.trim().toLocaleLowerCase();
+                    return getOptions().filter((option) =>
+                        option.name.toLocaleLowerCase().includes(query),
+                    );
+                }
+
+                function close() {
+                    list.hidden = true;
+                    input.setAttribute("aria-expanded", "false");
+                    activeIndex = -1;
+                }
+
+                function render() {
+                    const matches = options();
+                    activeIndex = Math.min(activeIndex, matches.length - 1);
+                    list.replaceChildren();
+                    if (!matches.length) {
+                        const empty = document.createElement("p");
+                        empty.className = "combobox-empty small";
+                        empty.textContent = "No matches found";
+                        list.append(empty);
+                    }
+                    matches.forEach((option, index) => {
+                        const button = document.createElement("button");
+                        button.type = "button";
+                        button.tabIndex = -1;
+                        button.className = "combobox-option";
+                        button.id = `${name}-option-${option.id}`;
+                        button.setAttribute("role", "option");
+                        button.setAttribute(
+                            "aria-selected",
+                            String(selectedTarget[`${name}Id`] === option.id),
+                        );
+                        button.classList.toggle("is-active", index === activeIndex);
+                        button.textContent = option.name;
+                        button.addEventListener("mousedown", (event) => {
+                            event.preventDefault();
+                            onSelect(option);
+                            close();
+                        });
+                        list.append(button);
+                    });
+                    list.hidden = false;
+                    input.setAttribute("aria-expanded", "true");
+                    const active = list.querySelector(".is-active");
+                    if (active) {
+                        input.setAttribute("aria-activedescendant", active.id);
+                        active.scrollIntoView({ block: "nearest" });
+                    } else {
+                        input.removeAttribute("aria-activedescendant");
+                    }
+                }
+
+                input.addEventListener("focus", () => {
+                    input.select();
+                    render();
+                });
+                input.addEventListener("input", () => {
+                    activeIndex = -1;
+                    render();
+                });
+                input.addEventListener("keydown", (event) => {
+                    const matches = options();
+                    if (event.key === "Escape") return close();
+                    if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        activeIndex = Math.min(activeIndex + 1, matches.length - 1);
+                        render();
+                    } else if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        activeIndex = Math.max(activeIndex - 1, 0);
+                        render();
+                    } else if (event.key === "Enter" && matches.length) {
+                        event.preventDefault();
+                        onSelect(matches[Math.max(activeIndex, 0)]);
+                        close();
+                    }
+                });
+                input.addEventListener("blur", () =>
+                    setTimeout(() => {
+                        const selected = getOptions().find(
+                            ({ id }) =>
+                                id === selectedTarget[`${name}Id`],
+                        );
+                        input.value = selected?.name || "";
+                        close();
+                    }),
+                );
+
+                return {
+                    setValue(option) {
+                        input.value = option?.name || "";
+                        input.disabled = !option && name !== "project";
+                        close();
+                    },
+                    reset() {
+                        input.value = "";
+                        input.disabled = name !== "project";
+                        close();
+                    },
+                };
+            }
+
+            function selectedProject() {
+                return railwayProjects.find(
+                    (project) => project.id === selectedTarget.projectId,
+                );
+            }
+
+            function updateAddButton() {
+                addButton.disabled = !Object.values(selectedTarget).every(Boolean);
+            }
+
+            const projectCombobox = createCombobox(
+                "project",
+                () => railwayProjects,
+                selectProject,
+            );
+            const serviceCombobox = createCombobox(
+                "service",
+                () => selectedProject()?.services || [],
+                selectService,
+            );
+            const environmentCombobox = createCombobox(
+                "environment",
+                () => selectedProject()?.environments || [],
+                selectEnvironment,
+            );
+
+            function selectProject(project) {
+                selectedTarget.projectId = project.id;
+                projectCombobox.setValue(project);
+                const service =
+                    project.services.find(({ name }) => /studio/i.test(name)) ||
+                    project.services[0];
+                const environment = project.environments[0];
+                selectedTarget.serviceId = service?.id || "";
+                selectedTarget.environmentId = environment?.id || "";
+                serviceCombobox.setValue(service);
+                environmentCombobox.setValue(environment);
+                updateAddButton();
+            }
+
+            function selectService(service) {
+                selectedTarget.serviceId = service.id;
+                serviceCombobox.setValue(service);
+                updateAddButton();
+            }
+
+            function selectEnvironment(environment) {
+                selectedTarget.environmentId = environment.id;
+                environmentCombobox.setValue(environment);
+                updateAddButton();
+            }
 
             function randomUrlSafe(length = 32) {
                 return base64UrlFromBytes(bytes(length));
@@ -403,27 +699,24 @@
                     ),
                 );
 
-                serviceSelect.replaceChildren();
-                for (const { project } of details) {
-                    for (const environment of project.environments.edges) {
-                        for (const service of project.services.edges) {
-                            const option = document.createElement("option");
-                            option.value = JSON.stringify({
-                                projectId: project.id,
-                                environmentId: environment.node.id,
-                                serviceId: service.node.id,
-                            });
-                            option.textContent = `${project.name} / ${service.node.name} / ${environment.node.name}`;
-                            if (/studio/i.test(service.node.name))
-                                option.selected = true;
-                            serviceSelect.append(option);
-                        }
-                    }
-                }
-                if (!serviceSelect.length)
+                railwayProjects = details.map(({ project }) => ({
+                    id: project.id,
+                    name: project.name,
+                    services: project.services.edges.map(({ node }) => node),
+                    environments: project.environments.edges.map(
+                        ({ node }) => node,
+                    ),
+                }));
+                if (!railwayProjects.length)
                     throw new Error(
                         "No services found. Reconnect and share a Railway project.",
                     );
+
+                selectProject(
+                    railwayProjects.find((project) =>
+                        project.services.some(({ name }) => /studio/i.test(name)),
+                    ) || railwayProjects[0],
+                );
 
                 connectButton.hidden = true;
                 disconnectButton.hidden = false;
@@ -439,7 +732,14 @@
                 connectButton.disabled = true;
                 disconnectButton.hidden = true;
                 railwayFields.hidden = true;
-                serviceSelect.replaceChildren();
+                railwayProjects = [];
+                Object.keys(selectedTarget).forEach(
+                    (key) => (selectedTarget[key] = ""),
+                );
+                projectCombobox.reset();
+                serviceCombobox.reset();
+                environmentCombobox.reset();
+                updateAddButton();
                 proxyConsent.checked = false;
                 railwayStatus.textContent = "Disconnected.";
             }
@@ -645,7 +945,17 @@
             }
 
             async function addCredentialsToRailway() {
-                const target = JSON.parse(serviceSelect.value);
+                const target = { ...selectedTarget };
+                const project = railwayProjects.find(
+                    ({ id }) => id === target.projectId,
+                );
+                const service = project.services.find(
+                    ({ id }) => id === target.serviceId,
+                );
+                const environment = project.environments.find(
+                    ({ id }) => id === target.environmentId,
+                );
+                const targetName = `${project.name} / ${service.name} / ${environment.name}`;
                 addButton.disabled = true;
                 railwayStatus.textContent = "Generating credentials...";
                 try {
@@ -663,13 +973,11 @@
                             },
                         },
                     );
-                    const service =
-                        serviceSelect.selectedOptions[0].textContent;
-                    railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${service}. Review and deploy Railway's staged changes.`;
+                    railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${targetName}. Review and deploy Railway's staged changes.`;
                 } catch (error) {
                     railwayStatus.textContent = `Error: ${error.message}`;
                 } finally {
-                    addButton.disabled = false;
+                    updateAddButton();
                 }
             }
 
