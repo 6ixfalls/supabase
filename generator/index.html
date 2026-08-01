@@ -79,6 +79,10 @@
                 color: var(--text);
                 border: 1px solid var(--border);
             }
+            button.danger {
+                background: #dc2626;
+                color: #fff;
+            }
             button.text-button {
                 display: inline;
                 padding: 0;
@@ -269,7 +273,8 @@
                 <h2>Railway OAuth</h2>
                 <p>
                     Connect with Railway, choose the Supabase Studio service,
-                    then generate and add all credentials to that service.
+                    then generate and add all credentials to that service. All
+                    services that use those credentials will be redeployed.
                     Credentials are generated in this browser.
                 </p>
                 <p class="warning card small">
@@ -376,7 +381,7 @@
                         service, then the target environment.
                     </p>
                     <button id="add-to-railway" disabled>
-                        Generate and add credentials
+                        Generate, add, and redeploy
                     </button>
                 </div>
                 <p id="railway-status" class="status small" role="status">
@@ -399,8 +404,8 @@
                     WebCrypto HMAC signs legacy HS256 JWTs, WebCrypto ECDSA
                     signs ES256 JWTs, and SHA-256 creates opaque key checksums.
                     Railway integration uses OAuth Authorization Code with PKCE
-                    and one GraphQL bulk variable mutation. No third-party code
-                    runs on this page.
+                    and Railway GraphQL variable and deployment mutations. No
+                    third-party code runs on this page.
                 </p>
                 <details>
                     <summary>Show this page's full source code</summary>
@@ -430,6 +435,8 @@
                 serviceId: "",
                 environmentId: "",
             };
+            const addButtonLabel = "Generate, add, and redeploy";
+            let railwayConfirmationPending = false;
 
             function createCombobox(name, getOptions, onSelect) {
                 const input = document.getElementById(`${name}-search`);
@@ -556,6 +563,12 @@
                     !Object.values(selectedTarget).every(Boolean);
             }
 
+            function resetCredentialConfirmation() {
+                railwayConfirmationPending = false;
+                addButton.textContent = addButtonLabel;
+                addButton.classList.toggle("danger", false);
+            }
+
             const projectCombobox = createCombobox(
                 "project",
                 () => railwayProjects,
@@ -573,6 +586,7 @@
             );
 
             function selectProject(project) {
+                resetCredentialConfirmation();
                 selectedTarget.projectId = project.id;
                 projectCombobox.setValue(project);
                 const service =
@@ -587,12 +601,14 @@
             }
 
             function selectService(service) {
+                resetCredentialConfirmation();
                 selectedTarget.serviceId = service.id;
                 serviceCombobox.setValue(service);
                 updateAddButton();
             }
 
             function selectEnvironment(environment) {
+                resetCredentialConfirmation();
                 selectedTarget.environmentId = environment.id;
                 environmentCombobox.setValue(environment);
                 updateAddButton();
@@ -617,7 +633,11 @@
                 return body;
             }
 
-            async function railwayGraphql(query, variables = {}) {
+            async function railwayGraphql(
+                query,
+                variables = {},
+                includeErrors = false,
+            ) {
                 if (sessionStorage.getItem("railway_proxy_consent") !== "yes")
                     throw new Error("Cloudflare Worker consent is required.");
                 if (railwayProxyUrl.includes("YOUR_WORKER"))
@@ -633,8 +653,9 @@
                         body: JSON.stringify({ query, variables }),
                     }),
                 );
-                if (body.errors) throw new Error(body.errors[0].message);
-                return body.data;
+                if (body.errors && !includeErrors)
+                    throw new Error(body.errors[0].message);
+                return includeErrors ? body : body.data;
             }
 
             async function connectRailway() {
@@ -748,6 +769,7 @@
             }
 
             function disconnectRailway() {
+                resetCredentialConfirmation();
                 for (const key of Object.keys(sessionStorage))
                     if (key.startsWith("railway_"))
                         sessionStorage.removeItem(key);
@@ -993,15 +1015,169 @@
                             input: {
                                 ...target,
                                 variables: credentials,
+                                skipDeploys: true,
                             },
                         },
                     );
-                    railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${targetName}. Review and deploy Railway's staged changes.`;
+                    railwayStatus.textContent =
+                        "Credentials added. Finding services that use them...";
+                    const credentialServices =
+                        await findCredentialServices(
+                            project,
+                            target.environmentId,
+                            service,
+                        );
+                    const failures = await redeployServices(
+                        credentialServices,
+                        target.environmentId,
+                    );
+                    const serviceNames = credentialServices
+                        .map(({ name }) => name)
+                        .join(", ");
+                    if (failures.length) {
+                        const failedServices = failures
+                            .map(({ service }) => service.name)
+                            .join(", ");
+                        railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${targetName}. Started ${credentialServices.length - failures.length} of ${credentialServices.length} redeploys (${serviceNames}). Redeploy failed for: ${failedServices}.`;
+                    } else {
+                        railwayStatus.textContent = `Added ${Object.keys(credentials).length} credentials to ${targetName} and started redeploying ${credentialServices.length} services: ${serviceNames}.`;
+                    }
                 } catch (error) {
                     railwayStatus.textContent = `Error: ${error.message}`;
                 } finally {
+                    resetCredentialConfirmation();
                     updateAddButton();
                 }
+            }
+
+            async function confirmAndAddCredentialsToRailway() {
+                if (!railwayConfirmationPending) {
+                    railwayConfirmationPending = true;
+                    addButton.textContent =
+                        "Confirm replacement and redeploy";
+                    addButton.classList.toggle("danger", true);
+                    railwayStatus.textContent =
+                        "Warning: this permanently replaces existing Railway auth credentials and redeploys every dependent service. Old credential values cannot be recovered here, and existing signed tokens may stop working. Click “Confirm replacement and redeploy” to continue.";
+                    return;
+                }
+
+                resetCredentialConfirmation();
+                await addCredentialsToRailway();
+            }
+
+            async function findCredentialServices(
+                project,
+                environmentId,
+                credentialService,
+            ) {
+                const credentialValues = Object.values(credentials);
+                const credentialReferences = Object.keys(credentials).map(
+                    (name) => `\${{${credentialService.name}.${name}}}`,
+                );
+                const matchingServices = [credentialService];
+                const services = project.services.filter(
+                    ({ id }) => id !== credentialService.id,
+                );
+                if (!services.length) return matchingServices;
+
+                railwayStatus.textContent = `Checking ${services.length} services for credential usage...`;
+                const queryVariables = {
+                    projectId: project.id,
+                    environmentId,
+                };
+                const serviceIdDefinitions = services
+                    .map((service, index) => {
+                        queryVariables[`serviceId${index}`] = service.id;
+                        return `$serviceId${index}: String!`;
+                    })
+                    .join("\n");
+                const serviceQueries = services
+                    .map(
+                        (_, index) => `service${index}: variables(
+                            projectId: $projectId
+                            environmentId: $environmentId
+                            serviceId: $serviceId${index}
+                        )`,
+                    )
+                    .join("\n");
+                const variablesByService = await railwayGraphql(
+                    `query ServiceVariables(
+                        $projectId: String!
+                        $environmentId: String!
+                        ${serviceIdDefinitions}
+                    ) {
+                        ${serviceQueries}
+                    }`,
+                    queryVariables,
+                );
+
+                services.forEach((service, index) => {
+                    const variables = variablesByService[`service${index}`];
+                    const usesCredentials = Object.values(variables || {}).some(
+                        (value) =>
+                            typeof value === "string" &&
+                            (credentialValues.some((credential) =>
+                                value.includes(credential),
+                            ) ||
+                                credentialReferences.some((reference) =>
+                                    value.includes(reference),
+                                )),
+                    );
+                    if (usesCredentials) matchingServices.push(service);
+                });
+
+                return matchingServices;
+            }
+
+            async function redeployServices(services, environmentId) {
+                if (!services.length) return [];
+
+                railwayStatus.textContent = `Redeploying ${services.length} services...`;
+                const mutationVariables = { environmentId };
+                const serviceIdDefinitions = services
+                    .map((service, index) => {
+                        mutationVariables[`serviceId${index}`] = service.id;
+                        return `$serviceId${index}: String!`;
+                    })
+                    .join("\n");
+                const serviceMutations = services
+                    .map(
+                        (_, index) => `service${index}: serviceInstanceRedeploy(
+                            environmentId: $environmentId
+                            serviceId: $serviceId${index}
+                        )`,
+                    )
+                    .join("\n");
+                const result = await railwayGraphql(
+                    `mutation RedeployServices(
+                        $environmentId: String!
+                        ${serviceIdDefinitions}
+                    ) {
+                        ${serviceMutations}
+                    }`,
+                    mutationVariables,
+                    true,
+                );
+                const errorsByAlias = new Map(
+                    (result.errors || []).map((error) => [
+                        error.path?.[0],
+                        new Error(error.message),
+                    ]),
+                );
+
+                return services.flatMap((service, index) => {
+                    const alias = `service${index}`;
+                    if (result.data?.[alias] && !errorsByAlias.has(alias))
+                        return [];
+                    return [
+                        {
+                            service,
+                            error:
+                                errorsByAlias.get(alias) ||
+                                new Error("Redeploy was not confirmed."),
+                        },
+                    ];
+                });
             }
 
             document
@@ -1040,7 +1216,10 @@
                 }
             });
             disconnectButton.addEventListener("click", disconnectRailway);
-            addButton.addEventListener("click", addCredentialsToRailway);
+            addButton.addEventListener(
+                "click",
+                confirmAndAddCredentialsToRailway,
+            );
 
             expInput.value = "3650";
             document.getElementById("source").textContent =
