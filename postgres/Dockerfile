@@ -1,4 +1,5 @@
-FROM supabase/postgres:17.6.1.136
+ARG POSTGRES_VERSION=17.6.1.158
+FROM supabase/postgres:${POSTGRES_VERSION}
 
 ADD ./realtime.sql /docker-entrypoint-initdb.d/migrations/99-realtime.sql
 ADD ./webhooks.sql /docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql
