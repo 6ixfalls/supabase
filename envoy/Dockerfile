@@ -1,4 +1,4 @@
-FROM envoyproxy/envoy:v1.38.0
+FROM envoyproxy/envoy:v1.39.0
 
 # Copy envoy configuration files
 COPY envoy.yaml \
