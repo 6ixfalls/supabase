@@ -23,4 +23,4 @@ COPY --chmod=755 wrapper.sh /usr/local/bin/wrapper.sh
 
 ENTRYPOINT ["/usr/local/bin/supabase-secrets", "--service", "db", "--", "/usr/local/bin/wrapper.sh"]
 
-CMD ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "--port=5432"]
+CMD ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal", "--port=5432"]
