@@ -1,10 +1,8 @@
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS secrets
+FROM golang:1.26-alpine AS secrets
 
-ARG TARGETOS
-ARG TARGETARCH
 ARG SUPABASE_SECRETS_VERSION=main
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOBIN=/out \
+RUN CGO_ENABLED=0 GOBIN=/out \
     go install github.com/6ixfalls/supabase/secrets/cmd/supabase-secrets@${SUPABASE_SECRETS_VERSION}
 
 FROM supabase/storage-api:v1.60.4

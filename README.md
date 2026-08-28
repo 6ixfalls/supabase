@@ -14,7 +14,7 @@ Deploy your own self-hosted instance of Supabase on Railway.
 
 > [!NOTE]
 > PostgreSQL is intentionally built from this repository's `postgres/Dockerfile` instead of deployed directly from the upstream Supabase image. Keep the repository-backed Postgres service so Railway's database tabs remain available.
-> Each repository-backed service uses its own directory as the Docker build context; configure Railway's Root Directory to the matching service directory.
+> Repository-backed services use the repository root as their Docker build context. Keep Railway's Root Directory at the repository root and select the matching service Dockerfile.
 
 ## Known Issues
 - Railway's deployment order is not reliable. During deployment, the database may come up after other services (Like Supabase Auth), which will show a "schema not initialized" error. Simply redeploy the image in the Railway menu under the running replica > Deploy, or Command+K and select `Redeploy source image`.
