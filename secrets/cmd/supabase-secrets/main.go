@@ -83,10 +83,13 @@ func run(args, environment []string) int {
 		return 2
 	}
 
-	values, err := credentialValues(service, environment)
+	commandEnvironment, derived, err := environmentForCommand(service, environment)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "supabase-secrets: %v\n", err)
 		return 1
+	}
+	if !derived {
+		fmt.Fprintln(os.Stderr, "supabase-secrets: ROOT_SECRET is not present; skipping derivation and executing command unchanged")
 	}
 
 	path, err := exec.LookPath(command[0])
@@ -94,13 +97,27 @@ func run(args, environment []string) int {
 		fmt.Fprintf(os.Stderr, "supabase-secrets: %v\n", err)
 		return 127
 	}
-	err = unix.Exec(path, command, childEnvironment(environment, values, serviceEnvironments[service]))
+	err = unix.Exec(path, command, commandEnvironment)
 	fmt.Fprintf(os.Stderr, "supabase-secrets: exec %s: %v\n", command[0], err)
 	return 126
 }
 
+func environmentForCommand(service string, environment []string) ([]string, bool, error) {
+	if _, present := lookup(environment, "ROOT_SECRET"); !present {
+		return environment, false, nil
+	}
+	values, err := credentialValues(service, environment)
+	if err != nil {
+		return nil, false, err
+	}
+	return childEnvironment(environment, values, serviceEnvironments[service]), true, nil
+}
+
 func credentialValues(service string, environment []string) (map[string]string, error) {
-	rootSecret := lookup(environment, "ROOT_SECRET")
+	rootSecret, present := lookup(environment, "ROOT_SECRET")
+	if !present {
+		return nil, errors.New("ROOT_SECRET is not present")
+	}
 	values, err := secrets.Derive(rootSecret)
 	if err != nil {
 		return nil, err
@@ -224,12 +241,12 @@ func defaultKeyMap(value string) string {
 	return string(encoded)
 }
 
-func lookup(environment []string, name string) string {
+func lookup(environment []string, name string) (string, bool) {
 	prefix := name + "="
 	for i := len(environment) - 1; i >= 0; i-- {
 		if strings.HasPrefix(environment[i], prefix) {
-			return strings.TrimPrefix(environment[i], prefix)
+			return strings.TrimPrefix(environment[i], prefix), true
 		}
 	}
-	return ""
+	return "", false
 }

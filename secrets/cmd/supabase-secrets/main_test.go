@@ -141,6 +141,31 @@ func TestCredentialValuesRequireRootSecret(t *testing.T) {
 	}
 }
 
+func TestMissingRootSecretPreservesEnvironment(t *testing.T) {
+	environment := []string{
+		"PATH=/bin",
+		"JWT_SECRET=fixed-jwt-secret",
+		"GOTRUE_JWT_SECRET=fixed-auth-secret",
+		"OTHER=kept",
+	}
+	got, derived, err := environmentForCommand("auth", environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derived {
+		t.Fatal("missing ROOT_SECRET unexpectedly enabled derivation")
+	}
+	if strings.Join(got, "\n") != strings.Join(environment, "\n") {
+		t.Fatalf("environment changed:\n got %q\nwant %q", got, environment)
+	}
+}
+
+func TestEmptyRootSecretDoesNotBypassValidation(t *testing.T) {
+	if _, _, err := environmentForCommand("auth", []string{"ROOT_SECRET=", "GOTRUE_JWT_SECRET=fixed"}); err == nil {
+		t.Fatal("explicitly empty ROOT_SECRET unexpectedly bypassed validation")
+	}
+}
+
 func TestParseArgs(t *testing.T) {
 	service, command, err := parseArgs([]string{"--service", "auth", "--", "server", "arg"})
 	if err != nil {

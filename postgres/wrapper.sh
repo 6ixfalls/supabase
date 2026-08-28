@@ -39,7 +39,7 @@ fi
 # appropriate PGHOST & PGPORT and redirect
 # the output to stdout if LOG_TO_STDOUT is true
 if [[ "$LOG_TO_STDOUT" == "true" ]]; then
-    /usr/local/bin/docker-entrypoint.sh "$@" 2>&1
+    exec /usr/local/bin/docker-entrypoint.sh "$@" 2>&1
 else
-    /usr/local/bin/docker-entrypoint.sh "$@"
+    exec /usr/local/bin/docker-entrypoint.sh "$@"
 fi

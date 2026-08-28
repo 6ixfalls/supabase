@@ -12,6 +12,10 @@ Deploy your own self-hosted instance of Supabase on Railway.
   - Fill in the variables in the deployment interface. Using https://6ixfalls.github.io/supabase/, generate the credentials and scroll down to `Railway variables`. Copy the value of each variable and paste it accordingly.
 - After deployment, Supabase should be completely up and running.
 
+> [!NOTE]
+> PostgreSQL is intentionally built from this repository's `postgres/Dockerfile` instead of deployed directly from the upstream Supabase image. Keep the repository-backed Postgres service so Railway's database tabs remain available.
+> Each repository-backed service uses its own directory as the Docker build context; configure Railway's Root Directory to the matching service directory.
+
 ## Known Issues
 - Railway's deployment order is not reliable. During deployment, the database may come up after other services (Like Supabase Auth), which will show a "schema not initialized" error. Simply redeploy the image in the Railway menu under the running replica > Deploy, or Command+K and select `Redeploy source image`.
 
@@ -23,4 +27,3 @@ This repository & template are maintained on a best-effort basis; major issues s
 Your deployments do not automatically update; you will have to do so manually, following the self-hosted Supabase guidance and the changes made within https://github.com/supabase/supabase/blob/master/docker/docker-compose.yml (and other related files). You can use the latest template version and compare it to your deployed version to see what has changed.
 
 The official guidance for self-hosted instances applies, but many (if not all) scripts will not work with Railway. You'll need to adapt the workflow and manually apply the migrations to upgrade major Postgres versions, like in https://supabase.com/docs/guides/self-hosting/postgres-upgrade-17.
-
