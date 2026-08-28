@@ -1,8 +1,15 @@
-FROM ghcr.io/6ixfalls/supabase-secrets:latest AS secrets
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS secrets
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG SUPABASE_SECRETS_VERSION=main
+
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOBIN=/out \
+    go install github.com/6ixfalls/supabase/secrets/cmd/supabase-secrets@${SUPABASE_SECRETS_VERSION}
 
 FROM envoyproxy/envoy:v1.39.0
 
-COPY --from=secrets --chmod=755 /supabase-secrets /usr/local/bin/supabase-secrets
+COPY --from=secrets --chmod=755 /out/supabase-secrets /usr/local/bin/supabase-secrets
 
 # Copy envoy configuration files
 COPY envoy.yaml \

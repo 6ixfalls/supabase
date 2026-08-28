@@ -4,14 +4,12 @@ on:
   schedule:
     - cron: "0 0 * * 1" # Every Monday at midnight UTC
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Build and Push Supabase Secrets Image"]
-    types: [completed]
   push:
     branches: ["main"]
     paths:
+      - "secrets/**"
       - "postgres/**"
-      - ".github/workflows/build-pg.yaml"
+      - ".github/workflows/build.yaml"
 
 env:
   REGISTRY: ghcr.io
@@ -22,7 +20,6 @@ env:
 jobs:
   build-postgres:
     name: Build PostgreSQL ${{ matrix.postgres_major }}
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

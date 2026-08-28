@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/6ixfalls/supabase/internal/secrets"
+	"github.com/6ixfalls/supabase/secrets/internal/secrets"
 )
 
 func TestChildEnvironmentReplacesSecretsAndDropsRoot(t *testing.T) {

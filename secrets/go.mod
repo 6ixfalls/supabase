@@ -1,4 +1,4 @@
-module github.com/6ixfalls/supabase
+module github.com/6ixfalls/supabase/secrets
 
 go 1.26
 

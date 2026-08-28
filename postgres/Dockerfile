@@ -1,10 +1,17 @@
 ARG POSTGRES_VERSION=17.6.1.158
 
-FROM ghcr.io/6ixfalls/supabase-secrets:latest AS secrets
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS secrets
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG SUPABASE_SECRETS_VERSION=main
+
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOBIN=/out \
+    go install github.com/6ixfalls/supabase/secrets/cmd/supabase-secrets@${SUPABASE_SECRETS_VERSION}
 
 FROM supabase/postgres:${POSTGRES_VERSION}
 
-COPY --from=secrets --chmod=755 /supabase-secrets /usr/local/bin/supabase-secrets
+COPY --from=secrets --chmod=755 /out/supabase-secrets /usr/local/bin/supabase-secrets
 
 ADD realtime.sql /docker-entrypoint-initdb.d/migrations/99-realtime.sql
 ADD webhooks.sql /docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql

@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/6ixfalls/supabase/internal/secrets"
+	"github.com/6ixfalls/supabase/secrets/internal/secrets"
 	"golang.org/x/sys/unix"
 )
 
