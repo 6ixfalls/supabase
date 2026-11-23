@@ -5,7 +5,7 @@ ARG SUPABASE_SECRETS_VERSION=main
 RUN CGO_ENABLED=0 GOBIN=/out \
     go install github.com/6ixfalls/supabase/secrets/cmd/supabase-secrets@${SUPABASE_SECRETS_VERSION}
 
-FROM postgrest/postgrest:v14.12
+FROM postgrest/postgrest:v14.18
 
 COPY --from=secrets --chmod=755 /out/supabase-secrets /usr/local/bin/supabase-secrets
 

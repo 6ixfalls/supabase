@@ -41,8 +41,7 @@ var serviceEnvironments = map[string]map[string]string{
 		"GOTRUE_JWT_KEYS":   "JWT_KEYS",
 	},
 	"rest": {
-		"PGRST_JWT_SECRET":              "JWT_JWKS",
-		"PGRST_APP_SETTINGS_JWT_SECRET": "JWT_SECRET",
+		"PGRST_JWT_SECRET": "JWT_JWKS",
 	},
 	"realtime": {
 		"API_JWT_SECRET":     "JWT_SECRET",
@@ -212,6 +211,8 @@ func childEnvironment(environment []string, values, selected map[string]string) 
 func managedEnvironmentNames() map[string]bool {
 	names := make(map[string]bool, len(secrets.Names)+len(secrets.GatewayNames)+1)
 	names["ROOT_SECRET"] = true
+	// Keep filtering legacy Railway variables that would expose the signing key to SQL.
+	names["PGRST_APP_SETTINGS_JWT_SECRET"] = true
 	for _, name := range secrets.Names {
 		names[name] = true
 	}

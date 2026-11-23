@@ -23,6 +23,8 @@ Deploy your own self-hosted instance of Supabase on Railway.
 
 This repository & template are maintained on a best-effort basis; major issues should be reported under [issues](https://github.com/6ixfalls/supabase/issues?q=sort%3Aupdated-desc+is%3Aissue+state%3Aopen+). Check [Supabase Self-Hosted Changelog](https://github.com/supabase/supabase/blob/master/docker/CHANGELOG.md) for important updates. We try our best to keep in sync with them.
 
+The [Changelog folder](./changelog) contains a summary of the most recent changes and how to implement them in your Railway deployment.
+
 ## Deployment Maintenance
 Your deployments do not automatically update; you will have to do so manually, following the self-hosted Supabase guidance and the changes made within https://github.com/supabase/supabase/blob/master/docker/docker-compose.yml (and other related files). You can use the latest template version and compare it to your deployed version to see what has changed.
 

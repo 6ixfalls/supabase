@@ -5,7 +5,7 @@ ARG SUPABASE_SECRETS_VERSION=main
 RUN CGO_ENABLED=0 GOBIN=/out \
     go install github.com/6ixfalls/supabase/secrets/cmd/supabase-secrets@${SUPABASE_SECRETS_VERSION}
 
-FROM supabase/studio:2026.08.03-sha-022b374
+FROM supabase/studio:2026.11.02-sha-a05e7ec
 
 COPY --from=secrets --chmod=755 /out/supabase-secrets /usr/local/bin/supabase-secrets
 
